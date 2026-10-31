@@ -1,0 +1,10 @@
+{
+ "name": "Harbour & Horizons Approvals",
+ "short_name": "H&H Approvals",
+ "start_url": "./",
+ "scope": "./",
+ "display": "standalone",
+ "background_color": "#f2f6f8",
+ "theme_color": "#1c648d",
+ "icons": [{"src": "logo.png", "sizes": "512x512", "type": "image/png"}]
+}

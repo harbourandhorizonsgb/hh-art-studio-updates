@@ -1,0 +1,203 @@
+<!doctype html><html lang="en-GB"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>H&amp;H Approvals</title>
+<meta name="theme-color" content="#1c648d">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="H&amp;H Approvals">
+<link rel="manifest" href="manifest.json"><link rel="apple-touch-icon" href="logo.png"><link rel="icon" href="logo.png">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.4 -apple-system,'Segoe UI',Roboto,Arial,sans-serif;background:#f2f6f8;color:#19394f;padding:0 0 40px}
+header{position:sticky;top:0;z-index:5;background:#1c648d;color:#fff;padding:calc(10px + env(safe-area-inset-top)) 16px 10px}
+header h1{font-size:18px;margin:0}header .sub{font-size:13px;opacity:.85;margin-top:2px}
+main{padding:0 16px;max-width:640px;margin:auto}
+h2{font-size:15px;margin:22px 0 8px;color:#3a5767;text-transform:uppercase;letter-spacing:.04em}
+.card{background:#fff;border:1px solid #d3dde5;border-radius:14px;margin:12px 0;overflow:hidden}
+.card .body{padding:14px}
+.card canvas{display:block;width:100%;height:auto;background:#0f2636}
+.loc{font-size:13px;color:#57707c}.lab{font-weight:700;font-size:16px;margin:2px 0 6px}
+.note{color:#a12c2c;font-size:14px;margin:6px 0}.hint{color:#57707c;font-size:13.5px;margin:6px 0}
+label.f{display:block;margin-top:10px;font-weight:600;font-size:14px}
+textarea,input[type=date]{width:100%;font:15px/1.4 inherit;font-family:inherit;padding:8px;border:1px solid #c5d6e1;border-radius:8px;margin-top:4px;background:#fafcfd;color:inherit}
+details summary{cursor:pointer;color:#1c648d;font-weight:600;font-size:14px;margin-top:10px}
+.btns{display:flex;gap:10px;margin-top:14px}
+button{flex:1;border:0;border-radius:10px;padding:13px 10px;font:inherit;font-weight:700;cursor:pointer}
+.ok{background:#2b8a5e;color:#fff}.no{background:#fdecea;color:#a52222;border:1px solid #e3b4b4}
+.sec{background:#eef4f8;color:#1c4d6b;border:1px solid #c5d6e1}
+button:disabled{opacity:.45}
+.opt{display:flex;gap:10px;align-items:flex-start;padding:10px;border:1px solid #e0e8ee;border-radius:10px;margin-top:8px;font-size:15px}
+.opt input{margin-top:3px;width:20px;height:20px;flex:none}.opt.sel{border-color:#1c648d;background:#eef5fa}
+.row{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 14px;font-size:14.5px;border-top:1px solid #edf2f5}
+.row:first-child{border-top:0}.row .w{color:#57707c;font-size:12.5px;white-space:nowrap}
+.bad{color:#a12c2c}.good{color:#1b6545}
+.empty{text-align:center;color:#57707c;padding:30px 10px}
+.bar{display:flex;gap:10px;margin:14px 0}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#183c56;color:#fff;padding:10px 16px;border-radius:10px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90%;text-align:center}
+.toast.on{opacity:1}
+</style></head><body>
+<header><h1>Harbour &amp; Horizons · Approvals</h1><div class="sub" id="sub">Loading…</div></header>
+<main id="out"></main><div class="toast" id="toast"></div>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function toast(t){const e=$('toast');e.textContent=t;e.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.remove('on'),2600)}
+const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+function mdText(md){const m=/^(\d\d)-(\d\d)$/.exec(md||'');return m?(+m[2])+' '+MONTHS[+m[1]-1]:''}
+const when=t=>{const d=new Date(t);return isNaN(d)||d.getFullYear()<2000?'':d.toLocaleString('en-GB',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})};
+
+/* ---- pairing: the link from the Art Studio carries #k=<key>[&s=<server>] ---- */
+let KEY='',SERVER='https://ntfy.sh';
+(function(){const h=new URLSearchParams(location.hash.slice(1));
+ try{if(h.get('k')){localStorage.setItem('hh_k',h.get('k'));localStorage.setItem('hh_s',h.get('s')||'https://ntfy.sh');history.replaceState(null,'',location.pathname)}
+  KEY=localStorage.getItem('hh_k')||'';SERVER=(localStorage.getItem('hh_s')||'https://ntfy.sh').replace(/\/+$/,'')}
+ catch(_){KEY=h.get('k')||'';SERVER=(h.get('s')||SERVER).replace(/\/+$/,'')}})();
+const topic=d=>'hh-'+KEY+'-'+d;
+
+/* ---- storage on the phone (IndexedDB: the list, the photos and decisions not yet confirmed) ---- */
+let dbp=null;
+function db(){return dbp||(dbp=new Promise((ok,no)=>{const r=indexedDB.open('hh-approvals',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)}))}
+async function kvGet(k){try{const d=await db();return await new Promise(ok=>{const r=d.transaction('kv').objectStore('kv').get(k);r.onsuccess=()=>ok(r.result);r.onerror=()=>ok(undefined)})}catch(_){return undefined}}
+async function kvSet(k,v){try{const d=await db();await new Promise(ok=>{const t=d.transaction('kv','readwrite');t.objectStore('kv').put(v,k);t.oncomplete=ok;t.onerror=ok})}catch(_){}}
+
+let snap=null;        // what the PC last sent: {made, items, done, photos}
+let outbox=[];        // decisions not yet confirmed by the PC
+let cancelled=[];     // decisions undone before the PC applied them
+let edits={},sel={},busy=false,lastErr='';
+
+async function fetchSnap(){
+ const r=await fetch(SERVER+'/'+topic('o')+'/json?poll=1&since=all',{cache:'no-store'});
+ if(!r.ok)throw Error('ntfy answered '+r.status);
+ const lines=(await r.text()).trim().split('\n').filter(Boolean).map(l=>{try{return JSON.parse(l)}catch(_){return null}}).filter(m=>m&&m.attachment&&m.attachment.url);
+ for(let i=lines.length-1;i>=0;i--){
+  try{const f=await fetch(lines[i].attachment.url,{cache:'no-store'});if(!f.ok)continue;const s=await f.json();if(s&&s.items)return s}catch(_){}
+ }
+ return null}
+
+async function refresh(manual){
+ if(!KEY){render();return}
+ lastErr='';
+ try{const s=await fetchSnap();
+  if(s&&(!snap||new Date(s.made)>=new Date(snap.made))){
+   // keep photos the phone already has if the PC sent the same ones
+   snap=s;await kvSet('snap',snap)}
+  else if(!s&&manual)toast('Nothing new from the PC – showing the last list it sent')}
+ catch(e){lastErr='Could not reach ntfy – showing the last list saved on this phone';if(manual)toast(lastErr)}
+ // decisions the PC has confirmed leave the outbox
+ if(snap&&snap.done){const n=outbox.length;outbox=outbox.filter(d=>!snap.done[d.id]);cancelled=cancelled.filter(id=>!snap.done[id]);if(outbox.length!==n)await saveOut()}
+ render();
+ if(outbox.length||cancelled.length)sendOut()}
+
+async function saveOut(){await kvSet('outbox',outbox);await kvSet('cancelled',cancelled)}
+
+let sending=false,sendAgain=false;
+async function sendOut(){
+ if(sending){sendAgain=true;return}sending=true;
+ try{do{sendAgain=false;
+   if(!outbox.length&&!cancelled.length)break;
+   const body=JSON.stringify({v:1,sent:new Date().toISOString(),decisions:outbox,cancelled});
+   const r=await fetch(SERVER+'/'+topic('i'),{method:'PUT',headers:{'Filename':'decisions.json'},body});
+   if(!r.ok)throw Error('ntfy answered '+r.status);
+   await kvSet('sentAt',Date.now())}while(sendAgain)}
+ catch(e){toast('Not sent yet (no connection?) – it will be sent next time you open this page')}
+ finally{sending=false;render()}}
+
+/* ---- the picture, drawn exactly as on the Share page ---- */
+const imgs={};
+function loadImg(src){return imgs[src]||(imgs[src]=new Promise((ok,no)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=no;i.src=src}))}
+function wrapLines(ctx,text,maxW){const words=String(text).replace(/ • (\d{3,4})$/,' • $1').split(/ +/);const lines=[];let cur='';for(const w of words){const t=cur?cur+' '+w:w;if(ctx.measureText(t).width>maxW&&cur){lines.push(cur);cur=w}else cur=t}if(cur)lines.push(cur);return lines}
+const SERIF='Georgia, "Times New Roman", "Noto Serif", serif',SANS='"Segoe UI", Roboto, Arial, sans-serif';
+async function drawPlace(it,cv){const pin=it.place==='pin',W=pin?1000:1080,H=pin?1500:1350;cv.width=W;cv.height=H;const c=cv.getContext('2d');
+ let img;try{img=await loadImg(snap.photos[it.photo])}catch(_){c.fillStyle='#ccd';c.fillRect(0,0,W,H);return false}
+ const iw=img.naturalWidth,ih=img.naturalHeight;let sx=0,sy=0,sw=iw,sh=ih;
+ if(it.place==='guess'){sw=iw*0.45;sh=ih*0.45;sx=(iw-sw)/2;sy=(ih-sh)/2}
+ const k=Math.max(W/sw,H/sh),dw=sw*k,dh=sh*k;c.drawImage(img,sx,sy,sw,sh,(W-dw)/2,(H-dh)/2,dw,dh);
+ const g=c.createLinearGradient(0,H*0.42,0,H);g.addColorStop(0,'rgba(8,22,36,0)');g.addColorStop(1,'rgba(8,22,36,0.88)');c.fillStyle=g;c.fillRect(0,H*0.42,W,H*0.58);
+ let head=it.head||'';if(it.place==='onthisday'){const t=mdText(val(it,'md'));head='ON THIS DAY'+(t?' · '+t.toUpperCase():'')}
+ const body=it.text||'';const pad=60,maxW=W-pad*2;
+ c.font='italic 50px '+SERIF;const lines=body?wrapLines(c,body,maxW).slice(0,5):[];
+ let hs=76;c.font='bold '+hs+'px '+SERIF;while(c.measureText(head).width>maxW&&hs>36){hs-=4;c.font='bold '+hs+'px '+SERIF}
+ const lh=62,blockH=hs+(lines.length?24+lines.length*lh:0);let y=H-110-blockH;
+ c.fillStyle='#f2d28c';c.textBaseline='top';c.fillText(head,pad,y);y+=hs+24;
+ c.fillStyle='#ffffff';c.font='italic 50px '+SERIF;lines.forEach(l=>{c.fillText(l,pad,y);y+=lh});
+ c.font='26px '+SANS;c.fillStyle='rgba(255,255,255,0.8)';c.textAlign='right';c.fillText(pin?'Art prints · Harbour & Horizons':'Harbour & Horizons',W-pad,H-60);c.textAlign='left';return true}
+
+function val(it,k){const e=edits[it.id]||{};return e[k]!==undefined?e[k]:(it[k]||'')}
+function edit(id,k,v){(edits[id]=edits[id]||{})[k]=v;if(k==='md'){const it=snap.items.find(x=>x.id===id);if(it)drawPlace(it,$('cv_'+cssId(id)))}}
+const cssId=id=>id.replace(/[^A-Za-z0-9_-]/g,'_');
+
+/* ---- decisions ---- */
+function decided(id){return outbox.find(d=>d.item===id)}
+async function decide(id,act){
+ const it=snap.items.find(x=>x.id===id);if(!it||busy)return;
+ const d={id:Date.now().toString(36)+Math.random().toString(36).slice(2,8),item:id,act,made:Date.now()};
+ if(it.kind==='fact'){d.fact=sel[id]!==undefined?sel[id]:(it.chosen||'');
+  if(!d.fact){toast('Choose a fact first');return}}
+ else if(act==='accept'){
+  if(it.place==='onthisday'&&!/^\d\d-\d\d$/.test(val(it,'md'))){toast('Choose the date it happened first');return}
+  busy=true;render();
+  try{const cv=document.createElement('canvas');if(!await drawPlace(it,cv))throw Error('The photo is missing – press Refresh');
+   d.image=cv.toDataURL('image/jpeg',0.9);
+   if(it.place==='pin'){d.title=val(it,'title');d.desc=val(it,'desc')}else{d.fb=val(it,'fb');d.ig=val(it,'ig')}
+   d.md=val(it,'md')}
+  catch(e){busy=false;toast(e.message);render();return}
+  busy=false}
+ outbox.push(d);await saveOut();delete edits[id];
+ toast(act==='accept'?'✓ Accepted – the PC applies it when it next runs':'✗ Rejected – the PC applies it when it next runs');
+ render();clearTimeout(decide.t);decide.t=setTimeout(sendOut,1200)}
+async function undo(did){outbox=outbox.filter(d=>d.id!==did);if(!cancelled.includes(did))cancelled.push(did);await saveOut();render();sendOut()}
+
+/* ---- page ---- */
+let renderLater=false,openD={};
+document.addEventListener('focusout',()=>setTimeout(()=>{if(renderLater&&!typing()){renderLater=false;render()}},50));
+const typing=()=>{const a=document.activeElement;return a&&(a.tagName==='TEXTAREA'||(a.tagName==='INPUT'&&a.type!=='radio'))};
+function render(){
+ if(typing()){renderLater=true;return}
+ const o=$('out');
+ if(!KEY){$('sub').textContent='Not paired yet';o.innerHTML='<div class="card"><div class="body"><p><b>Pair this phone first.</b></p><p class="hint">On the PC open the Art Studio → <b>3. Share</b> → <b>Phone approvals</b>, then scan the QR code with this phone’s camera (or tap the link sent to your ntfy app).</p></div></div>';return}
+ $('sub').textContent=snap?('List from the PC: '+when(snap.made)+(outbox.length?' · '+outbox.length+' waiting to be applied':'')):'Nothing from the PC yet';
+ let h='';
+ if(lastErr)h+='<p class="note">'+esc(lastErr)+'</p>';
+ if(!snap){h+='<div class="empty">Nothing has arrived from the PC yet.<br>The Art Studio sends its list when it is running.<br><br><button class="sec" onclick="refresh(true)">Refresh</button></div>';o.innerHTML=h;return}
+ const age=Date.now()-new Date(snap.made);
+ if(age>3*3600e3)h+='<p class="hint">This list was saved on your phone '+when(snap.made)+'. The PC sends a fresh one when it is on.</p>';
+ const pending=snap.items.filter(it=>!decided(it.id)),waiting=outbox.slice();
+ h+='<h2>Waiting for you ('+pending.length+')</h2>';
+ if(!pending.length)h+='<div class="card"><div class="empty">All done – nothing waiting.</div></div>';
+ pending.forEach(it=>{h+=it.kind==='fact'?factCard(it):placeCard(it)});
+ if(waiting.length){h+='<h2>Sent to the PC</h2><div class="card">';
+  waiting.forEach(d=>{const it=snap.items.find(x=>x.id===d.item)||{location:'',label:d.item};h+='<div class="row"><span>'+(d.act==='accept'?'✓ ':'✗ ')+esc(it.location)+' – '+esc(it.label)+'<br><span class="w">Applied when the PC next runs</span></span><button class="sec" style="flex:none;padding:8px 12px" onclick="undo(\''+d.id+'\')">Undo</button></div>'});
+  h+='</div>'}
+ const done=Object.entries(snap.done||{}).map(([k,v])=>Object.assign({k},v)).sort((a,b)=>new Date(b.when)-new Date(a.when)).slice(0,15);
+ if(done.length){h+='<h2>Done by the PC</h2><div class="card">';
+  done.forEach(r=>{h+='<div class="row"><span class="'+(r.ok?'good':'bad')+'">'+esc(r.msg)+'</span><span class="w">'+esc(when(r.when))+'</span></div>'});h+='</div>'}
+ h+='<div class="bar"><button class="sec" onclick="refresh(true)">Refresh</button></div>';
+ o.innerHTML=h;
+ pending.filter(it=>it.kind==='place').forEach(it=>drawPlace(it,$('cv_'+cssId(it.id))))}
+
+function placeCard(it){const id=it.id,q=JSON.stringify(id).replace(/"/g,'&quot;');
+ let h='<div class="card"><canvas id="cv_'+cssId(id)+'"></canvas><div class="body"><div class="loc">'+esc(it.location)+'</div><div class="lab">'+esc(it.label)+'</div>';
+ if(it.note)h+='<div class="note">'+esc(it.note)+'</div>';
+ const ta=(k,lab,rows,open)=>{const t='<label class="f">'+lab+'<textarea rows="'+rows+'" oninput="edit('+q+',\''+k+'\',this.value)">'+esc(val(it,k))+'</textarea></label>';return t};
+ if(it.place==='onthisday'){const md=val(it,'md'),y=new Date().getFullYear();
+  h+='<label class="f">Date it happened '+(md?'<span class="hint">('+esc(mdText(md))+(it.wiki_md&&md===it.wiki_md?', from Wikipedia':'')+')</span>':'<span class="note">– Wikipedia gave no day: choose it</span>')+'<input type="date" value="'+(md?y+'-'+md:'')+'" onchange="edit('+q+',\'md\',this.value.slice(5))"></label>'}
+ if(it.place==='pin')h+=ta('title','Pin title',2)+det(id,'desc','Pin description',ta('desc','',5))+'<p class="hint">Board: South West Places &amp; History</p>';
+ else h+=det(id,'fb','Facebook text',ta('fb','',6))+det(id,'ig','Instagram text',ta('ig','',7));
+ h+='<div class="btns"><button class="ok" '+(busy||it.block?'disabled':'')+' onclick="decide('+q+',\'accept\')">✓ Accept</button><button class="no" '+(busy?'disabled':'')+' onclick="decide('+q+',\'reject\')">✗ Reject</button></div>';
+ return h+'</div></div>'}
+
+function det(id,k,lab,inner){const key=id+'|'+k;return '<details'+(openD[key]?' open':'')+' ontoggle="openD['+JSON.stringify(key).replace(/"/g,'&quot;')+']=this.open"><summary>'+lab+'</summary>'+inner+'</details>'}
+function factCard(it){const id=it.id,q=JSON.stringify(id).replace(/"/g,'&quot;');const cur=sel[id]!==undefined?sel[id]:(it.chosen||'');
+ let h='<div class="card"><div class="body"><div class="loc">'+esc(it.location)+'</div><div class="lab">Interesting fact</div>';
+ if(it.reason)h+='<div class="hint">'+esc(it.reason)+'</div>';
+ (it.options||[]).forEach((f,i)=>{h+='<label class="opt'+(f===cur?' sel':'')+'"><input type="radio" name="f_'+cssId(id)+'" '+(f===cur?'checked':'')+' onchange="pick('+q+','+i+')"><span>'+esc(f)+'</span></label>'});
+ if(!(it.options||[]).length)h+='<p class="hint">No facts to choose from – write your own on the PC.</p>';
+ h+='<div class="btns"><button class="ok" '+(cur?'':'disabled')+' onclick="decide('+q+',\'accept\')">✓ Accept</button><button class="no" '+(cur?'':'disabled')+' onclick="decide('+q+',\'reject\')">✗ Reject</button></div>';
+ return h+'</div></div>'}
+function pick(id,i){const it=snap.items.find(x=>x.id===id);if(it){sel[id]=it.options[i];render()}}
+
+(async function(){
+ snap=(await kvGet('snap'))||null;outbox=(await kvGet('outbox'))||[];cancelled=(await kvGet('cancelled'))||[];
+ render();await refresh(false);
+ document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')refresh(false)})})();
+</script></body></html>
