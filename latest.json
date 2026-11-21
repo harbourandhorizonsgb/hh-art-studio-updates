@@ -1,0 +1,9 @@
+{
+ "version": "6.1",
+ "build": "202611211540",
+ "url": "https://raw.githubusercontent.com/harbourandhorizonsgb/hh-art-studio-updates/main/Harbour_Horizons_Art_Studio.exe",
+ "sha256": "fccdaac0e7215ef81ecb990842acacedfef9556927c312237b5f4821d1a5d5bd",
+ "notes": "Build 21Nov-1540",
+ "box_url": "https://raw.githubusercontent.com/harbourandhorizonsgb/hh-art-studio-updates/main/hhbox-linux-amd64",
+ "box_sha256": "afd439d8abca892b0d7313d4b37e9310afbd323bb16e32c373d08623b2774e15"
+}
